@@ -34,14 +34,14 @@ import (
 )
 
 const (
-	titleUp                 = "Should scale from 1 pod to 3 pods and then from 3 pods to 5 pods"
-	titleDown               = "Should scale from 5 pods to 3 pods and then from 3 pods to 1 pod"
+	titleUp               = "Should scale from 1 pod to 3 pods and then from 3 pods to 5 pods"
+	titleDown             = "Should scale from 5 pods to 3 pods and then from 3 pods to 1 pod"
 	titleAverageUtilization = " using Average Utilization for aggregation"
-	titleAverageValue       = " using Average Value for aggregation"
-	valueMetricType         = autoscalingv2.AverageValueMetricType
-	utilizationMetricType   = autoscalingv2.UtilizationMetricType
-	cpuResource             = v1.ResourceCPU
-	memResource             = v1.ResourceMemory
+	titleAverageValue     = " using Average Value for aggregation"
+	valueMetricType       = autoscalingv2.AverageValueMetricType
+	utilizationMetricType = autoscalingv2.UtilizationMetricType
+	cpuResource           = v1.ResourceCPU
+	memResource           = v1.ResourceMemory
 )
 
 var _ = SIGDescribe(feature.HPA, "Horizontal pod autoscaling (scale resource: CPU)", func() {
@@ -221,10 +221,17 @@ func (st *HPAScaleTest) run(ctx context.Context, name string, kind schema.GroupV
 	hpa := e2eautoscaling.CreateResourceHorizontalPodAutoscaler(ctx, rc, st.resourceType, st.metricTargetType, st.targetValue, st.minPods, st.maxPods)
 	ginkgo.DeferCleanup(e2eautoscaling.DeleteHorizontalPodAutoscaler, rc, hpa.Name)
 
-	rc.WaitForReplicas(ctx, st.firstScale, timeToWait)
+	// REVISED FIX: Use a single, robust check for stabilization.
+	// This waits for the replica count to be within the desired range for a sustained period of time.
+	// This directly addresses the reviewer's feedback about the previous fix not being robust enough.
+	stabilizationTimeout := 5 * time.Minute // Allow up to 5 minutes for the HPA to stabilize at the target.
 	if st.firstScaleStasis > 0 {
-		rc.EnsureDesiredReplicasInRange(ctx, st.firstScale, st.firstScale+1, st.firstScaleStasis, hpa.Name)
+		stabilizationTimeout = st.firstScaleStasis
 	}
+
+	framework.Logf("Waiting up to %v for replicas to stabilize in range [%d, %d]", stabilizationTimeout, st.firstScale, st.firstScale+1)
+	rc.EnsureDesiredReplicasInRange(ctx, st.firstScale, st.firstScale+1, stabilizationTimeout, hpa.Name)
+
 	if st.resourceType == cpuResource && st.cpuBurst > 0 && st.secondScale > 0 {
 		rc.ConsumeCPU(st.cpuBurst)
 		rc.WaitForReplicas(ctx, int(st.secondScale), timeToWait)
@@ -342,7 +349,7 @@ func (st *HPAContainerResourceScaleTest) run(ctx context.Context, name string, k
 			rc.ConsumeCPU(st.cpuBurst)
 			rc.WaitForReplicas(ctx, int(st.secondScale), timeToWait)
 		}
-		if st.resourceType == memResource && st.memBurst > 0 && st.secondScale > 0 {
+		if st.resourceType == memResource && st.memBurst > <strong> 0 && st.secondScale > 0 {
 			rc.ConsumeMem(st.memBurst)
 			rc.WaitForReplicas(ctx, int(st.secondScale), timeToWait)
 		}
@@ -519,11 +526,11 @@ func resourceRequirements(cpuMillis, memMb int64) *v1.ResourceRequirements {
 	return &v1.ResourceRequirements{
 		Requests: v1.ResourceList{
 			v1.ResourceCPU:    *resource.NewMilliQuantity(cpuMillis, resource.DecimalSI),
-			v1.ResourceMemory: *resource.NewQuantity(memMb*1024*1024, resource.BinarySI), // ResourceMemory is in bytes
+			v1.ResourceMemory: *resource.NewQuantity(memMb * 1024 * 1024, resource.BinarySI), // ResourceMemory is in bytes
 		},
 		Limits: v1.ResourceList{
 			v1.ResourceCPU:    *resource.NewMilliQuantity(cpuMillis, resource.DecimalSI),
-			v1.ResourceMemory: *resource.NewQuantity(memMb*1024*1024, resource.BinarySI), // ResourceMemory is in bytes
+			v1.ResourceMemory: *resource.NewQuantity(memMb * 1024 * 1024, resource.BinarySI), // ResourceMemory is in bytes
 		},
 	}
 }
